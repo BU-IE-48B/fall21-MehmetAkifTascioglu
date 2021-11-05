@@ -1,0 +1,339 @@
+---
+title: "ie48b-hw1"
+author: "Mehmet Akif Taşcıoğlu"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
+library(ggplot2)
+library(scatterplot3d)
+
+```
+
+
+# Gesture Recognition
+
+
+## Introduction
+
+In this assignment, the x, y and z coordinates of the waves were given separately and I tried to manipulate and visualize a multivariate time series data.After reading the data, some manipulations are executed like melt function to see the data properly.I found acceleration values and i calculate velocity and location values of every point by using cumsum function.I visualized waves in 3d by using scatterplot3d function.
+
+
+
+```{r}
+data_path= 'C:/Users/User/Desktop/ie48b/hw1/data/uWaveGestureLibrary_X_TRAIN'
+x_train=fread(data_path)
+head(x_train)
+data_path= 'C:/Users/User/Desktop/ie48b/hw1/data/uWaveGestureLibrary_Y_TRAIN'
+y_train=fread(data_path)
+data_path= 'C:/Users/User/Desktop/ie48b/hw1/data/uWaveGestureLibrary_Z_TRAIN'
+z_train=fread(data_path)
+
+```
+
+
+## Data Manipulation
+
+```{r}
+# first add id variable (data.table notation)
+# and rename column name "V1" with "class"
+#sort based on class first
+# for x axes
+setnames(x_train,'V1','class')
+x_train=x_train[order(class)]
+x_train[,class:=as.character(class)]
+x_train[,id:=1:.N]
+head(x_train)
+#for y axes 
+setnames(y_train,'V1','class')
+y_train=y_train[order(class)]
+y_train[,class:=as.character(class)]
+y_train[,id:=1:.N]
+head(y_train)
+#for z axes
+setnames(z_train,'V1','class')
+z_train=z_train[order(class)]
+z_train[,class:=as.character(class)]
+z_train[,id:=1:.N]
+head(z_train)
+```
+
+
+
+```{r}
+# melt the data for long format
+
+x_train=melt(x_train,id.vars=c('id','class'))
+head(x_train)
+x_train[,time:=as.numeric(gsub("\\D", "", variable))-1]
+head(x_train)
+# remove variable
+x_train=x_train[,list(id,class,time,value)]
+x_train=x_train[order(id,time)]
+head(x_train)
+```
+
+```{r}
+# Same manipulations for the axes Y
+
+y_train=melt(y_train,id.vars=c('id','class'))
+y_train[,time:=as.numeric(gsub("\\D", "", variable))-1]
+# remove variable
+y_train=y_train[,list(id,class,time,value)]
+y_train=y_train[order(id,time)]
+head(y_train)
+```
+
+
+```{r}
+# Same manipulations for the axes Z
+
+z_train=melt(z_train,id.vars=c('id','class'))
+z_train[,time:=as.numeric(gsub("\\D", "", variable))-1]
+# remove variable
+z_train=z_train[,list(id,class,time,value)]
+z_train=z_train[order(id,time)]
+head(z_train)
+```
+
+
+
+```{r}
+# Merging the axes
+xyz_train =x_train
+setnames(xyz_train,'value','acceleration_x')
+xyz_train$acceleration_y = y_train$value
+xyz_train$acceleration_z = z_train$value
+head(xyz_train)
+
+```
+
+
+```{r}
+# Adding the speed and location information for all axes
+
+
+xyz_train[,speed_x:=cumsum(acceleration_x),by=id]
+
+xyz_train[,speed_y:=cumsum(acceleration_y),by=id]
+
+xyz_train[,speed_z:=cumsum(acceleration_z),by=id]
+
+
+xyz_train[,location_x:=cumsum(speed_x),by=id]
+
+xyz_train[,location_y:=cumsum(speed_y),by=id]
+
+xyz_train[,location_z:=cumsum(speed_z),by=id]
+head(xyz_train)
+```
+
+
+# PART 1
+
+## 3D Scatter Plots
+
+I chose randomly a wave from each class.
+
+
+```{r}
+# Class 1-id 1
+scatterplot3d(xyz_train[id==1]$location_x,xyz_train[id==1]$location_y,xyz_train[id==1]$location_z, pch = 16, color="steelblue")
+xyz_train[id==1]$class
+```
+
+
+
+```{r}
+#Class 2 - id 135
+scatterplot3d(xyz_train[id==135]$location_x,xyz_train[id==135]$location_y,xyz_train[id==135]$location_z, pch = 16, color="steelblue")
+xyz_train[id==135]$class
+```
+
+
+
+```{r}
+# Class 3 - id 266
+scatterplot3d(xyz_train[id==266]$location_x,xyz_train[id==266]$location_y,xyz_train[id==266]$location_z, pch = 16, color="steelblue")
+xyz_train[id==266]$class
+```
+
+
+
+```{r}
+# Class 4 - id 375
+scatterplot3d(xyz_train[id==375]$location_x,xyz_train[id==375]$location_y,xyz_train[id==375]$location_z, pch = 16, color="steelblue")
+xyz_train[id==375]$class
+
+```
+
+
+
+```{r}
+#Class 5 - id 490
+scatterplot3d(xyz_train[id==490]$location_x,xyz_train[id==490]$location_y,xyz_train[id==490]$location_z, pch = 16, color="steelblue")
+xyz_train[id==490]$class
+
+```
+
+
+
+```{r}
+#Class 6 - id 618
+scatterplot3d(xyz_train[id==618]$location_x,xyz_train[id==618]$location_y,xyz_train[id==618]$location_z, pch = 16, color="steelblue")
+xyz_train[id==618]$class
+
+```
+
+
+sixth image is a vertical straight line in gesture vocabulary , but in this plot ,it goes diagonally and bends like a curve.
+
+
+```{r}
+#Class 7 - id 763 
+scatterplot3d(xyz_train[id==763]$location_x,xyz_train[id==763]$location_y,xyz_train[id==763]$location_z, pch = 16, color="steelblue")
+xyz_train[id==763]$class
+
+```
+
+
+
+```{r}
+#Class 8 - id 852
+scatterplot3d(xyz_train[id==852]$location_x,xyz_train[id==852]$location_y,xyz_train[id==852]$location_z, pch = 16, color="steelblue")
+xyz_train[id==852]$class
+
+```
+
+
+Plots 1, 2, 7 and 8 are similar to the shapes in gesture vocabulary.
+
+
+# PART 2 -Alternative Time Series Representations
+
+## Distance to Orijin Representation
+For my first representation, I calculated the euclidean distance of each point from the origin and added this information to the columns for every time step.Then I found the average distances of the points for each class.
+
+
+```{r}
+distance<- function(x_coor,y_coor,z_coor){
+  d=sqrt((x_coor-0)^2+(y_coor-0)^2+(z_coor-0)^2)
+  return(d)
+}
+xyz_train[,distance_to_orijin:=distance(location_x,location_y,location_z),by=id]
+class1_distance_to_orijin=mean(xyz_train[class==1]$distance_to_orijin)
+class2_distance_to_orijin=mean(xyz_train[class==2]$distance_to_orijin)
+class3_distance_to_orijin=mean(xyz_train[class==3]$distance_to_orijin)
+class4_distance_to_orijin=mean(xyz_train[class==4]$distance_to_orijin)
+class5_distance_to_orijin=mean(xyz_train[class==5]$distance_to_orijin)
+class6_distance_to_orijin=mean(xyz_train[class==6]$distance_to_orijin)
+class7_distance_to_orijin=mean(xyz_train[class==7]$distance_to_orijin)
+class8_distance_to_orijin=mean(xyz_train[class==8]$distance_to_orijin)
+```
+
+
+
+
+```{r}
+dt<-c(class1_distance_to_orijin,class2_distance_to_orijin,class3_distance_to_orijin,class4_distance_to_orijin,class5_distance_to_orijin,class6_distance_to_orijin,class7_distance_to_orijin,class8_distance_to_orijin)
+dt
+classno<-c(1:8)
+barplot(dt,names.arg=classno,xlab="Classno",main="Distance to the Orijin of Classes",col="blue",border="red")
+
+```
+
+
+Waves in the 5th and 6th classes are, on average, more distant from the origin.Waves in the 2nd, 7th and 8th classes consist of points closer to the origin on average.
+This is a very logical output.Because in pdf As the gesture vocabulary figures show, the waves in the 3,4,5,6th classes are waves that go in a continuous direction, so their distance from the origin is high, and the reason why they are higher in 5 and 6 is the movements of the waves in the z axis.
+The waves in the 2nd, 7th and 8th classes are curved waves, so their distance from the origin is lower.
+
+
+##  Individual model representation
+
+I used an autogressive model of lag 2 for x,y and z coordinate time series. 
+
+
+```{r}
+
+ar_xyz_train=copy(xyz_train)
+ar_xyz_train=ar_xyz_train[order(id,time)]
+ar_xyz_train[,lag1_x:=shift(location_x,1),by=list(id)]
+ar_xyz_train[,lag2_x:=shift(location_x,2),by=list(id)]
+ar_xyz_train[,lag1_y:=shift(location_y,1),by=list(id)]
+ar_xyz_train[,lag2_y:=shift(location_y,2),by=list(id)]
+ar_xyz_train[,lag1_z:=shift(location_z,1),by=list(id)]
+ar_xyz_train[,lag2_z:=shift(location_z,2),by=list(id)]
+
+head(ar_xyz_train)
+
+series_id=unique(ar_xyz_train$id)
+
+fit_ar2_x=function(dat){
+    fit_x=lm(location_x~lag1_x+lag2_x,dat)
+    return(data.frame(t(coef(fit_x))))
+}
+fit_ar2_y=function(dat){
+    fit_y=lm(location_y~lag1_y+lag2_y,dat)
+    return(data.frame(t(coef(fit_y))))
+}
+fit_ar2_z=function(dat){
+    fit_z=lm(location_z~lag1_z+lag2_z,dat)
+    return(data.frame(t(coef(fit_z))))
+}
+fitted_coef_x=lapply(series_id,function(x) fit_ar2_x(ar_xyz_train[id==x]))
+fitted_coef_y=lapply(series_id,function(y) fit_ar2_y(ar_xyz_train[id==y]))
+fitted_coef_z=lapply(series_id,function(z) fit_ar2_z(ar_xyz_train[id==z]))
+
+coef_dt_x=rbindlist(fitted_coef_x)
+coef_dt_y=rbindlist(fitted_coef_y)
+coef_dt_z=rbindlist(fitted_coef_z)
+                   
+head(coef_dt_x)
+head(coef_dt_y)
+head(coef_dt_z)
+
+```
+
+
+
+```{r}
+coef_dt_x[,id:=series_id]
+coef_dt_y[,id:=series_id]
+coef_dt_z[,id:=series_id]
+coef_dt_x=merge(coef_dt_x,x_train[,list(id,class)],by='id')
+coef_dt_y=merge(coef_dt_y,y_train[,list(id,class)],by='id')
+coef_dt_z=merge(coef_dt_z,z_train[,list(id,class)],by='id')
+head(coef_dt_x)
+head(coef_dt_y)
+head(coef_dt_z) 
+
+```
+
+
+
+
+```{r}
+ggplot(coef_dt_x,aes(x=lag1_x,y=lag2_x,color=class)) + geom_point(size = 3)
+ggplot(coef_dt_y,aes(x=lag1_y,y=lag2_y,color=class)) + geom_point(size = 3)
+ggplot(coef_dt_z,aes(x=lag1_z,y=lag2_z,color=class)) + geom_point(size = 3)
+```
+
+
+
+## Conclusion
+
+To compare both representations, I would prefer the distance method to the orijin because it gives more information and detail about wave classes.
+
+
+
+
+
+
+
+
+
+
+

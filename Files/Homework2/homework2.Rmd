@@ -1,0 +1,167 @@
+---
+title: "IE48b_homework2"
+author: "Mehmet Akif Taşcıoğlu"
+date: "22 11 2021"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(rattle)
+library(genlasso)
+library(data.table)
+library(rpart)
+library(ggplot2)
+library(e1071)
+
+```
+
+
+
+## Introduction
+In this homework,we are asked to do representations of CBF training series with Regression Tree method and 1D Fused Lasso method.Then, i compared two alternative adaptive piecewise constant approximation in terms of their representation ability and classification performance.
+
+
+## Data Manipulation
+
+
+```{r}
+cbf_train_data <- fread("C:/Users/User/Desktop/ie48b/hw2/CBF/CBF_TRAIN.txt")
+cbf_train_data[,id:=1:.N]
+setnames(cbf_train_data, "V1", "class")
+head(cbf_train_data)
+
+```
+
+
+## 1D Fused Lasso
+In representation of  the data with 1D Fused Lasso, we choose an suitable lambda such that form balance between SSE and the fused lasso penalty.
+
+```{r}
+# i create empty lists to keep the data in for loop.
+fused_lasso_rep <- list()
+min_lambda <- list()
+
+for (i in c(1:30)) {
+  
+    f<- fusedlasso1d(as.matrix(cbf_train_data[id==i, 2:129]))
+    fused_lasso_rep[[i]] <- f
+#Cross-validation with k = 10 on each time series to find good lambda value that gives least error.
+    cv <- cv.trendfilter(fused_lasso_rep[[i]], k = 10)
+    min_lambda[[i]] <- cv$lambda.min
+}
+
+```
+
+
+```{r}
+
+plot(fused_lasso_rep[[1]], lambda=min_lambda[[1]])
+
+```
+
+
+## Regression Tree
+we need to find the optimum maxdepth with minsplit=20, minbucket=10 and cp=0 to build regression trees for each time series.
+
+
+```{r}
+# melt the data for long format
+long_cbf <- melt(cbf_train_data,id.vars=c('id','class'))
+head(long_cbf)
+long_cbf[,time:=as.numeric(gsub("\\D", "", variable))-1]
+long_cbf <- long_cbf[,list(id,class,time,value)]
+long_cbf <- long_cbf[order(id,time)]
+head(long_cbf)
+
+```
+
+
+
+```{r}
+# i create empty lists to keep the data in for loop.
+tree_rep_list<- list()
+max_depth <- list()
+range_values<- list(minsplit=20, cp=0, minbucket=10, maxdepth=1:10)
+for (i in c(1:30)) {
+    tree_tuned <- tune(rpart, value~time, data=long_cbf[id==i], ranges=range_values)
+   max_depth[[i]] <- tree_tuned
+    tree<- rpart(value~time, long_cbf[id==i], control=rpart.control(cp=0, minsplit=20, minbucket=10, maxdepth=max_depth[[i]]$best.parameters[,4]))
+    tree_rep_list[[i]] <- tree
+     
+}
+tree_rep_list[[1]]
+selected_series = long_cbf[id==1]
+
+
+```
+
+
+
+```{r}
+fancyRpartPlot(tree_rep_list[[1]])
+```
+
+
+
+```{r}
+selected_series[,tree_rep:=predict(tree_rep_list[[1]], selected_series)]
+data_plot <- melt(selected_series, id.vars='time', measure.vars=c('value','tree_rep'))
+ggplot(data_plot,aes(x=time,y=value,color=variable)) + geom_line()
+
+```
+
+
+## Comparison of Two Methods
+
+
+```{r}
+
+predicted_values = list()
+
+for (i in c(1:30)) {
+  
+    series = long_cbf[id==i] 
+# predicted values with regression tree
+    series[,tree_rep:=predict(tree_rep_list[[i]], series)]
+# predicted values with fused lasso
+    series[,flasso_rep:=predict(fused_lasso_rep[[i]], lambda=min_lambda[[i]],series)$fit]
+#list of predicted values
+    predicted_values[[i]] = series
+    
+}
+head(predicted_values[[1]])
+
+```
+
+
+
+```{r}
+mse1 = do.call(rbind, predicted_values)
+mse2 = melt(mse1, id.vars=c("id", "class","time"), measure.vars=c("value","tree_rep","flasso_rep"))
+head(mse2)
+
+```
+
+
+```{r}
+mse2 = merge(mse2, long_cbf[,list(id, class, time, obs=value)], by=c("id",  "class", "time"))
+mse3 = mse2[!(variable=="value"), list(MSE=mean((value-obs)^2)),list(id, class, variable)]
+head(mse3)
+
+```
+
+
+
+```{r}
+ggplot(mse3, aes(x=variable,y=MSE)) + facet_wrap(~class) + geom_boxplot()
+```
+
+
+When we look at the boxplots,we clearly see that the mean squared error values of fused lasso method are less than mse values of regression tree method.Therefore,Fused Lasso Representation is better than regression tree representation.
+
+
+
+ 
+
+
+

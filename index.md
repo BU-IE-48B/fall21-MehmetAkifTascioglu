@@ -11,3 +11,7 @@ This is my Progress Journal website created for IE 48B course at Bogazici Univer
 ## Homework 2 (22/11/2021)
 
 [Here](Files/Homework2/homework2.html)is penalized regression approaches for the time series representation.
+
+## Homework 3 (13/12/2021)
+
+[Here](Files/Homework3/homework3.html) are Comparison of NN classifiers with alternative representations work.

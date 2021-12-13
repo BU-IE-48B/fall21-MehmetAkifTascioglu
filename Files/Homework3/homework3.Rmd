@@ -1,0 +1,814 @@
+---
+title: "HW3"
+author: "Mehmet Akif Taşcıoğlu"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
+library(ggplot2)
+library(rpart)
+library(dtw)
+library(wavelets)
+library(TunePareto)
+library(data.table)
+library(rattle)
+library(zoo)
+library(repr)
+library(TSrepr)
+library(Rcpp)
+library(genlasso)
+```
+
+
+# Comparison of NN classifiers with alternative representations
+In this assignment, 5 datasets are selected from http://www.timeseriesclassification.com webpage.The aim of this task is to compare alternative distance measures for classification.
+
+
+```{r}
+nn_classify_cv=function(dist_matrix,train_class,test_indices,k=1){
+    
+    test_distances_to_train=dist_matrix[test_indices,]
+    test_distances_to_train=test_distances_to_train[,-test_indices]
+    train_class=train_class[-test_indices]
+    ordered_indices=apply(test_distances_to_train,1,order)
+    if(k==1){
+        nearest_class=as.numeric(trainclass[as.numeric(ordered_indices[1,])])
+        nearest_class=data.table(id=test_indices,nearest_class)
+    } else {
+        nearest_class=apply(ordered_indices[1:k,],2,function(x) {trainclass[x]})
+        nearest_class=data.table(id=test_indices,t(nearest_class))
+    }
+    long_nn_class=melt(nearest_class,'id')
+    class_counts=long_nn_class[,.N,list(id,value)]
+    class_counts[,predicted_prob:=N/k]
+    wide_class_prob_predictions=dcast(class_counts,id~value,value.var='predicted_prob')
+    wide_class_prob_predictions[is.na(wide_class_prob_predictions)]=0
+    class_predictions=class_counts[,list(predicted=value[which.max(N)]),by=list(id)]
+    return(list(prediction=class_predictions,prob_estimates=wide_class_prob_predictions))
+    
+}
+```
+
+
+## Dataset 1: Powercons
+
+
+```{r}
+setwd("C:/Users/User/Desktop/ie48b/hw3")
+powercons_train_data <- fread("PowerCons_TRAIN.txt")
+powercons_test_data <- fread("PowerCons_TEST.txt")
+
+setnames(powercons_train_data,"V1","class")
+powercons_train_data=powercons_train_data[order(class)]
+powercons_train_data[,class:=as.character(class)]
+powercons_train_data[,id:=1:.N]
+powercons_train_data_long=melt(powercons_train_data,id.vars=c('id','class'))
+powercons_train_data_long[,time:=as.numeric(gsub("\\D", "", variable))-1]
+powercons_train_data_long=powercons_train_data_long[,list(id,class,time,value)]
+powercons_train_data_long=powercons_train_data_long[order(id,time)]
+head(powercons_train_data_long)
+```
+
+
+
+```{r}
+
+plot(x = powercons_train_data_long[id == 1 & class == 1]$time,y = powercons_train_data_long[id == 1 & class == 1]$value, xlab = "Time",main = "Powercons")
+```
+
+
+```{r}
+powercons_train_data = powercons_train_data[,2:(ncol(powercons_train_data)-1)]
+```
+
+## Piecewise Approximation Approach
+
+```{r}
+train_nrow=nrow(powercons_train_data)
+test_nrow=nrow(powercons_test_data)
+segment_length=5
+powercons_train_data_long=powercons_train_data_long[order(id,time)]
+paa_result=vector('list',train_nrow)
+for (i in 1:train_nrow){
+      data_ts=powercons_train_data_long[id==i]$value
+      paa_repr=repr_paa(data_ts,segment_length,meanC)
+      paa_result[[i]]=paa_repr 
+}
+paa_list=vector('list', train_nrow)
+for (i in 1:train_nrow) {
+      paa_list[[i]]=as.data.table(t(paa_result[[i]]))
+}
+seg_paa5=rbindlist(paa_list)
+head(seg_paa5)
+segment_length=10
+powercons_train_data_long=powercons_train_data_long[order(id,time)]
+paa_result=vector('list',train_nrow)
+for (i in 1:train_nrow){
+      data_ts=powercons_train_data_long[id==i]$value
+      paa_repr=repr_paa(data_ts,segment_length,meanC)
+      paa_result[[i]]=paa_repr 
+}
+paa_list=vector('list', train_nrow)
+for (i in 1:train_nrow) {
+      paa_list[[i]]=as.data.table(t(paa_result[[i]]))
+}
+seg_paa10=rbindlist(paa_list) 
+head(seg_paa10)
+segment_length=20
+powercons_train_data_long=powercons_train_data_long[order(id,time)]
+paa_result=vector('list',train_nrow)
+for (i in 1:train_nrow){
+      data_ts=powercons_train_data_long[id==i]$value
+      paa_repr=repr_paa(data_ts,segment_length,meanC)
+      paa_result[[i]]=paa_repr 
+}
+paa_list=vector('list', train_nrow)
+for (i in 1:train_nrow) {
+      paa_list[[i]]=as.data.table(t(paa_result[[i]]))
+}
+seg_paa20=rbindlist(paa_list) 
+head(seg_paa20)
+
+```
+
+```{r}
+plot(x=powercons_train_data_long[id==1 & class==1]$time,y=powercons_train_data_long[id==1 & class==1]$seg_paa5)
+```
+
+
+ 
+## Tree Piecewise Representation
+
+
+```{r}
+for (i in 1:length(unique(powercons_train_data_long$id))){
+fit <- rpart(value~time,data = powercons_train_data_long[id == i],control = rpart.control(maxdepth = 2))
+powercons_train_data_long[id == i,tree_piecewise:=predict(fit,powercons_train_data_long[id == i])]
+}
+plot(x = powercons_train_data_long[id == 10 & class == 1]$time,y = powercons_train_data_long[id == 10 & class == 1]$tree_piecewise)
+``` 
+ 
+ 
+ 
+```{r}
+powercons_train_data_raw = data.frame()
+for(i in 1:length(unique(powercons_train_data_long$id))){
+powercons_train_data_raw = rbind(powercons_train_data_raw,t(as.data.frame(powercons_train_data_long[id == i]$value)))
+}
+row.names(powercons_train_data_raw) <- NULL
+head(powercons_train_data_raw,10)
+```
+
+
+
+```{r}
+powercons_train_data_tree_piecewise = data.frame()
+for(i in 1:length(unique(powercons_train_data_long$id))){
+    powercons_train_data_tree_piecewise = rbind(powercons_train_data_tree_piecewise,t(as.data.frame(powercons_train_data_long[id == i]$tree_piecewise)))
+}
+row.names(powercons_train_data_tree_piecewise) <- NULL
+head(powercons_train_data_tree_piecewise,10)
+```
+
+
+
+
+```{r}
+powercons_train_data_paa5 = data.frame()
+for(i in 1:length(unique(powercons_train_data_long$id))){
+    powercons_train_data_paa5 = rbind(powercons_train_data_paa5,t(as.data.frame(seg_paa5)))
+}
+row.names(powercons_train_data_paa5) <- NULL
+head(powercons_train_data_paa5)
+```
+
+
+```{r}
+powercons_train_data_paa10 = data.frame()
+for(i in 1:length(unique(powercons_train_data_long$id))){
+    powercons_train_data_paa10 = rbind(powercons_train_data_paa10,t(as.data.frame(seg_paa10)))
+}
+row.names(powercons_train_data_paa10) <- NULL
+head(powercons_train_data_paa10)
+```
+
+
+
+```{r}
+powercons_train_data_paa20 = data.frame()
+for(i in 1:length(unique(powercons_train_data_long$id))){
+    powercons_train_data_paa20 = rbind(powercons_train_data_paa20,t(as.data.frame(seg_paa20)))
+}
+row.names(powercons_train_data_paa20) <- NULL
+head(powercons_train_data_paa20)
+```
+
+
+
+
+
+
+## Dataset 2: PLANE
+
+
+```{r}
+plane_train_data <- fread("Plane_TRAIN.txt")
+plane_test_data <- fread("Plane_TEST.txt")
+
+setnames(plane_train_data,"V1","class")
+plane_train_data=plane_train_data[order(class)]
+plane_train_data[,class:=as.character(class)]
+plane_train_data[,id:=1:.N]
+plane_train_data_long=melt(plane_train_data,id.vars=c('id','class'))
+plane_train_data_long[,time:=as.numeric(gsub("\\D", "", variable))-1]
+plane_train_data_long=plane_train_data_long[,list(id,class,time,value)]
+plane_train_data_long=plane_train_data_long[order(id,time)]
+head(plane_train_data_long)
+```
+
+
+```{r}
+
+plot(x = plane_train_data_long[id == 1 & class == 1]$time,y = plane_train_data_long[id == 1 & class == 1]$value, xlab = "Time",main = "Plane")
+```
+
+
+
+```{r}
+plane_train_data = plane_train_data[,2:(ncol(plane_train_data)-1)]
+```
+
+
+## Piecewise Approximation Approach
+
+
+```{r}
+train_nrow=nrow(plane_train_data)
+test_nrow=nrow(plane_test_data)
+segment_length=5
+plane_train_data_long=plane_train_data_long[order(id,time)]
+paa_result=vector('list',train_nrow)
+for (i in 1:train_nrow){
+      data_ts=plane_train_data_long[id==i]$value
+      paa_repr=repr_paa(data_ts,segment_length,meanC)
+      paa_result[[i]]=paa_repr 
+}
+paa_list=vector('list', train_nrow)
+for (i in 1:train_nrow) {
+      paa_list[[i]]=as.data.table(t(paa_result[[i]]))
+}
+seg_paa5=rbindlist(paa_list)
+head(seg_paa5)
+segment_length=10
+plane_train_data_long=plane_train_data_long[order(id,time)]
+paa_result=vector('list',train_nrow)
+for (i in 1:train_nrow){
+      data_ts=plane_train_data_long[id==i]$value
+      paa_repr=repr_paa(data_ts,segment_length,meanC)
+      paa_result[[i]]=paa_repr 
+}
+paa_list=vector('list', train_nrow)
+for (i in 1:train_nrow) {
+      paa_list[[i]]=as.data.table(t(paa_result[[i]]))
+}
+seg_paa10=rbindlist(paa_list) 
+head(seg_paa10)
+segment_length=20
+plane_train_data_long=plane_train_data_long[order(id,time)]
+paa_result=vector('list',train_nrow)
+for (i in 1:train_nrow){
+      data_ts=plane_train_data_long[id==i]$value
+      paa_repr=repr_paa(data_ts,segment_length,meanC)
+      paa_result[[i]]=paa_repr 
+}
+paa_list=vector('list', train_nrow)
+for (i in 1:train_nrow) {
+      paa_list[[i]]=as.data.table(t(paa_result[[i]]))
+}
+seg_paa20=rbindlist(paa_list) 
+head(seg_paa20)
+
+```
+
+
+## Tree Piecewise Representation
+
+
+```{r}
+for (i in 1:length(unique(plane_train_data_long$id))){
+fit <- rpart(value~time,data = plane_train_data_long[id == i],control = rpart.control(maxdepth = 2))
+plane_train_data_long[id == i,tree_piecewise:=predict(fit,plane_train_data_long[id == i])]
+}
+plot(x = plane_train_data_long[id == 10 & class == 1]$time,y = plane_train_data_long[id == 10 & class == 1]$tree_piecewise)
+``` 
+
+
+
+```{r}
+plane_train_data_raw = data.frame()
+for(i in 1:length(unique(plane_train_data_long$id))){
+plane_train_data_raw = rbind(plane_train_data_raw,t(as.data.frame(plane_train_data_long[id == i]$value)))
+}
+row.names(plane_train_data_raw) <- NULL
+head(plane_train_data_raw,10)
+```
+
+
+
+```{r}
+plane_train_data_tree_piecewise = data.frame()
+for(i in 1:length(unique(plane_train_data_long$id))){
+    plane_train_data_tree_piecewise = rbind(plane_train_data_tree_piecewise,t(as.data.frame(plane_train_data_long[id == i]$tree_piecewise)))
+}
+row.names(plane_train_data_tree_piecewise) <- NULL
+head(plane_train_data_tree_piecewise)
+```
+
+
+
+```{r}
+plane_train_data_paa5 = data.frame()
+for(i in 1:length(unique(plane_train_data_long$id))){
+    plane_train_data_paa5 = rbind(plane_train_data_paa5,t(as.data.frame(seg_paa5)))
+}
+row.names(plane_train_data_paa5) <- NULL
+head(plane_train_data_paa5)
+```
+
+
+
+```{r}
+plane_train_data_paa10 = data.frame()
+for(i in 1:length(unique(plane_train_data_long$id))){
+    plane_train_data_paa10 = rbind(plane_train_data_paa10,t(as.data.frame(seg_paa10)))
+}
+row.names(plane_train_data_paa10) <- NULL
+head(plane_train_data_paa10)
+```
+
+
+
+```{r}
+plane_train_data_paa20 = data.frame()
+for(i in 1:length(unique(plane_train_data_long$id))){
+    plane_train_data_paa20 = rbind(plane_train_data_paa20,t(as.data.frame(seg_paa20)))
+}
+row.names(plane_train_data_paa20) <- NULL
+head(plane_train_data_paa20)
+```
+
+
+## Dataset 3: GunPointMaleVersusFemale
+
+
+```{r}
+gunpointMaleVersusFemale_train_data <- fread("GunPointMaleVersusFemale_TRAIN.txt")
+gunpointMaleVersusFemale_test_data <- fread("GunPointMaleVersusFemale_TEST.txt")
+
+setnames(gunpointMaleVersusFemale_train_data,"V1","class")
+gunpointMaleVersusFemale_train_data=gunpointMaleVersusFemale_train_data[order(class)]
+gunpointMaleVersusFemale_train_data[,class:=as.character(class)]
+gunpointMaleVersusFemale_train_data[,id:=1:.N]
+gunpointMaleVersusFemale_train_data_long=melt(gunpointMaleVersusFemale_train_data,id.vars=c('id','class'))
+gunpointMaleVersusFemale_train_data_long[,time:=as.numeric(gsub("\\D", "", variable))-1]
+gunpointMaleVersusFemale_train_data_long=gunpointMaleVersusFemale_train_data_long[,list(id,class,time,value)]
+gunpointMaleVersusFemale_train_data_long=gunpointMaleVersusFemale_train_data_long[order(id,time)]
+head(gunpointMaleVersusFemale_train_data_long)
+```
+
+
+
+```{r}
+plot(x = gunpointMaleVersusFemale_train_data_long[id == 1 & class == 1]$time,y = gunpointMaleVersusFemale_train_data_long[id == 1 & class == 1]$value, xlab = "Time",main = "gunpointMaleVersusFemale")
+```
+
+
+```{r}
+gunpointMaleVersusFemale_train_data = gunpointMaleVersusFemale_train_data[,2:(ncol(gunpointMaleVersusFemale_train_data)-1)]
+```
+
+
+## Piecewise Approximation Approach
+
+
+
+```{r}
+train_nrow=nrow(gunpointMaleVersusFemale_train_data)
+test_nrow=nrow(gunpointMaleVersusFemale_test_data)
+segment_length=5
+gunpointMaleVersusFemale_train_data_long=gunpointMaleVersusFemale_train_data_long[order(id,time)]
+paa_result=vector('list',train_nrow)
+for (i in 1:train_nrow){
+      data_ts=gunpointMaleVersusFemale_train_data_long[id==i]$value
+      paa_repr=repr_paa(data_ts,segment_length,meanC)
+      paa_result[[i]]=paa_repr 
+}
+paa_list=vector('list', train_nrow)
+for (i in 1:train_nrow) {
+      paa_list[[i]]=as.data.table(t(paa_result[[i]]))
+}
+seg_paa5=rbindlist(paa_list)
+head(seg_paa5)
+segment_length=10
+gunpointMaleVersusFemale_train_data_long=gunpointMaleVersusFemale_train_data_long[order(id,time)]
+paa_result=vector('list',train_nrow)
+for (i in 1:train_nrow){
+      data_ts=gunpointMaleVersusFemale_train_data_long[id==i]$value
+      paa_repr=repr_paa(data_ts,segment_length,meanC)
+      paa_result[[i]]=paa_repr 
+}
+paa_list=vector('list', train_nrow)
+for (i in 1:train_nrow) {
+      paa_list[[i]]=as.data.table(t(paa_result[[i]]))
+}
+seg_paa10=rbindlist(paa_list) 
+head(seg_paa10)
+segment_length=20
+gunpointMaleVersusFemale_train_data_long=gunpointMaleVersusFemale_train_data_long[order(id,time)]
+paa_result=vector('list',train_nrow)
+for (i in 1:train_nrow){
+      data_ts=gunpointMaleVersusFemale_train_data_long[id==i]$value
+      paa_repr=repr_paa(data_ts,segment_length,meanC)
+      paa_result[[i]]=paa_repr 
+}
+paa_list=vector('list', train_nrow)
+for (i in 1:train_nrow) {
+      paa_list[[i]]=as.data.table(t(paa_result[[i]]))
+}
+seg_paa20=rbindlist(paa_list) 
+head(seg_paa20)
+
+```
+
+
+## Tree Piecewise Representation
+
+
+```{r}
+for (i in 1:length(unique(gunpointMaleVersusFemale_train_data_long$id))){
+fit <- rpart(value~time,data = gunpointMaleVersusFemale_train_data_long[id == i],control = rpart.control(maxdepth = 2))
+gunpointMaleVersusFemale_train_data_long[id == i,tree_piecewise:=predict(fit,gunpointMaleVersusFemale_train_data_long[id == i])]
+}
+plot(x = gunpointMaleVersusFemale_train_data_long[id == 10 & class == 1]$time,y = gunpointMaleVersusFemale_train_data_long[id == 10 & class == 1]$tree_piecewise)
+``` 
+
+
+
+```{r}
+gunpointMaleVersusFemale_train_data_raw = data.frame()
+for(i in 1:length(unique(gunpointMaleVersusFemale_train_data_long$id))){
+gunpointMaleVersusFemale_train_data_raw = rbind(gunpointMaleVersusFemale_train_data_raw,t(as.data.frame(gunpointMaleVersusFemale_train_data_long[id == i]$value)))
+}
+row.names(gunpointMaleVersusFemale_train_data_raw) <- NULL
+head(gunpointMaleVersusFemale_train_data_raw,10)
+```
+
+
+```{r}
+gunpointMaleVersusFemale_train_data_tree_piecewise = data.frame()
+for(i in 1:length(unique(gunpointMaleVersusFemale_train_data_long$id))){
+   gunpointMaleVersusFemale_train_data_tree_piecewise = rbind(gunpointMaleVersusFemale_train_data_tree_piecewise,t(as.data.frame(gunpointMaleVersusFemale_train_data_long[id == i]$tree_piecewise)))
+}
+row.names(gunpointMaleVersusFemale_train_data_tree_piecewise) <- NULL
+head(gunpointMaleVersusFemale_train_data_tree_piecewise)
+```
+
+
+
+```{r}
+gunpointMaleVersusFemale_train_data_paa5 = data.frame()
+for(i in 1:length(unique(gunpointMaleVersusFemale_train_data_long$id))){
+   gunpointMaleVersusFemale_train_data_paa5 = rbind(gunpointMaleVersusFemale_train_data_paa5,t(as.data.frame(seg_paa5)))
+}
+row.names(gunpointMaleVersusFemale_train_data_paa5) <- NULL
+head(gunpointMaleVersusFemale_train_data_paa5)
+```
+
+
+
+```{r}
+gunpointMaleVersusFemale_train_data_paa10 = data.frame()
+for(i in 1:length(unique(gunpointMaleVersusFemale_train_data_long$id))){
+    gunpointMaleVersusFemale_train_data_paa10 = rbind(gunpointMaleVersusFemale_train_data_paa10,t(as.data.frame(seg_paa10)))
+}
+row.names(gunpointMaleVersusFemale_train_data_paa10) <- NULL
+head(gunpointMaleVersusFemale_train_data_paa10)
+```
+
+
+
+```{r}
+gunpointMaleVersusFemale_train_data_paa20 = data.frame()
+for(i in 1:length(unique(gunpointMaleVersusFemale_train_data_long$id))){
+    gunpointMaleVersusFemale_train_data_paa20 = rbind(gunpointMaleVersusFemale_train_data_paa20,t(as.data.frame(seg_paa20)))
+}
+row.names(gunpointMaleVersusFemale_train_data_paa20) <- NULL
+head(gunpointMaleVersusFemale_train_data_paa20)
+```
+
+
+
+## Dataset 4: TRACE
+
+
+```{r}
+trace_train_data <- fread("Trace_TRAIN.txt")
+trace_test_data <- fread("Trace_TEST.txt")
+
+setnames(trace_train_data,"V1","class")
+trace_train_data=trace_train_data[order(class)]
+trace_train_data[,class:=as.character(class)]
+trace_train_data[,id:=1:.N]
+trace_train_data_long=melt(trace_train_data,id.vars=c('id','class'))
+trace_train_data_long[,time:=as.numeric(gsub("\\D", "", variable))-1]
+trace_train_data_long=trace_train_data_long[,list(id,class,time,value)]
+trace_train_data_long=trace_train_data_long[order(id,time)]
+head(trace_train_data_long)
+```
+
+
+```{r}
+plot(x = trace_train_data_long[id == 1 & class == 1]$time,y = trace_train_data_long[id == 1 & class == 1]$value, xlab = "Time",main = "Trace")
+```
+
+
+```{r}
+trace_train_data = trace_train_data[,2:(ncol(trace_train_data)-1)]
+```
+
+
+## Piecewise Approximation Approach
+
+
+```{r}
+train_nrow=nrow(trace_train_data)
+test_nrow=nrow(trace_test_data)
+segment_length=5
+trace_train_data_long=trace_train_data_long[order(id,time)]
+paa_result=vector('list',train_nrow)
+for (i in 1:train_nrow){
+      data_ts=trace_train_data_long[id==i]$value
+      paa_repr=repr_paa(data_ts,segment_length,meanC)
+      paa_result[[i]]=paa_repr 
+}
+paa_list=vector('list', train_nrow)
+for (i in 1:train_nrow) {
+      paa_list[[i]]=as.data.table(t(paa_result[[i]]))
+}
+seg_paa5=rbindlist(paa_list)
+head(seg_paa5)
+segment_length=10
+trace_train_data_long=trace_train_data_long[order(id,time)]
+paa_result=vector('list',train_nrow)
+for (i in 1:train_nrow){
+      data_ts=trace_train_data_long[id==i]$value
+      paa_repr=repr_paa(data_ts,segment_length,meanC)
+      paa_result[[i]]=paa_repr 
+}
+paa_list=vector('list', train_nrow)
+for (i in 1:train_nrow) {
+      paa_list[[i]]=as.data.table(t(paa_result[[i]]))
+}
+seg_paa10=rbindlist(paa_list) 
+head(seg_paa10)
+segment_length=20
+trace_train_data_long=trace_train_data_long[order(id,time)]
+paa_result=vector('list',train_nrow)
+for (i in 1:train_nrow){
+      data_ts=trace_train_data_long[id==i]$value
+      paa_repr=repr_paa(data_ts,segment_length,meanC)
+      paa_result[[i]]=paa_repr 
+}
+paa_list=vector('list', train_nrow)
+for (i in 1:train_nrow) {
+      paa_list[[i]]=as.data.table(t(paa_result[[i]]))
+}
+seg_paa20=rbindlist(paa_list) 
+head(seg_paa20)
+
+```
+
+
+## Tree Piecewise Representation
+
+
+```{r}
+for (i in 1:length(unique(trace_train_data_long$id))){
+fit <- rpart(value~time,data = trace_train_data_long[id == i],control = rpart.control(maxdepth = 2))
+trace_train_data_long[id == i,tree_piecewise:=predict(fit,trace_train_data_long[id == i])]
+}
+plot(x = trace_train_data_long[id == 10 & class == 1]$time,y = trace_train_data_long[id == 10 & class == 1]$tree_piecewise)
+``` 
+
+
+```{r}
+trace_train_data_raw = data.frame()
+for(i in 1:length(unique(trace_train_data_long$id))){
+trace_train_data_raw = rbind(trace_train_data_raw,t(as.data.frame(trace_train_data_long[id == i]$value)))
+}
+row.names(trace_train_data_raw) <- NULL
+head(trace_train_data_raw)
+```
+
+
+```{r}
+trace_train_data_tree_piecewise = data.frame()
+for(i in 1:length(unique(trace_train_data_long$id))){
+   trace_train_data_tree_piecewise = rbind(trace_train_data_tree_piecewise,t(as.data.frame(trace_train_data_long[id == i]$tree_piecewise)))
+}
+row.names(trace_train_data_tree_piecewise) <- NULL
+head(trace_train_data_tree_piecewise)
+```
+
+
+```{r}
+trace_train_data_paa5 = data.frame()
+for(i in 1:length(unique(trace_train_data_long$id))){
+   trace_train_data_paa5 = rbind(trace_train_data_paa5,t(as.data.frame(seg_paa5)))
+}
+row.names(trace_train_data_paa5) <- NULL
+head(trace_train_data_paa5)
+```
+
+
+
+```{r}
+trace_train_data_paa10 = data.frame()
+for(i in 1:length(unique(trace_train_data_long$id))){
+    trace_train_data_paa10 = rbind(trace_train_data_paa10,t(as.data.frame(seg_paa10)))
+}
+row.names(trace_train_data_paa10) <- NULL
+head(trace_train_data_paa10)
+```
+
+
+```{r}
+trace_train_data_paa20 = data.frame()
+for(i in 1:length(unique(trace_train_data_long$id))){
+   trace_train_data_paa20 = rbind(trace_train_data_paa20,t(as.data.frame(seg_paa20)))
+}
+row.names(trace_train_data_paa20) <- NULL
+head(trace_train_data_paa20)
+```
+
+
+
+## Dataset 5: GunPointOldVersusYoung
+
+
+```{r}
+gunpointoldVersusyoung_train_data <- fread("GunPointOldVersusYoung_TRAIN.txt")
+gunpointoldVersusyoung_test_data <- fread("GunPointOldVersusYoung_TEST.txt")
+
+setnames(gunpointoldVersusyoung_train_data,"V1","class")
+gunpointoldVersusyoung_train_data=gunpointoldVersusyoung_train_data[order(class)]
+gunpointoldVersusyoung_train_data[,class:=as.character(class)]
+gunpointoldVersusyoung_train_data[,id:=1:.N]
+gunpointoldVersusyoung_train_data_long=melt(gunpointoldVersusyoung_train_data,id.vars=c('id','class'))
+gunpointoldVersusyoung_train_data_long[,time:=as.numeric(gsub("\\D", "", variable))-1]
+gunpointoldVersusyoung_train_data_long=gunpointoldVersusyoung_train_data_long[,list(id,class,time,value)]
+gunpointoldVersusyoung_train_data_long=gunpointoldVersusyoung_train_data_long[order(id,time)]
+head(gunpointoldVersusyoung_train_data_long)
+```
+
+
+
+```{r}
+plot(x = gunpointoldVersusyoung_train_data_long[id == 1 & class == 1]$time,y = gunpointoldVersusyoung_train_data_long[id == 1 & class == 1]$value, xlab = "Time",main = "GunPointOldVersusYoung")
+```
+
+
+```{r}
+gunpointoldVersusyoung_train_data = gunpointoldVersusyoung_train_data[,2:(ncol(gunpointoldVersusyoung_train_data)-1)]
+```
+
+
+## Piecewise Approximation Approach
+
+
+```{r}
+train_nrow=nrow(gunpointoldVersusyoung_train_data)
+test_nrow=nrow(gunpointoldVersusyoung_test_data)
+segment_length=5
+gunpointoldVersusyoung_train_data_long=gunpointoldVersusyoung_train_data_long[order(id,time)]
+paa_result=vector('list',train_nrow)
+for (i in 1:train_nrow){
+      data_ts=gunpointoldVersusyoung_train_data_long[id==i]$value
+      paa_repr=repr_paa(data_ts,segment_length,meanC)
+      paa_result[[i]]=paa_repr 
+}
+paa_list=vector('list', train_nrow)
+for (i in 1:train_nrow) {
+      paa_list[[i]]=as.data.table(t(paa_result[[i]]))
+}
+seg_paa5=rbindlist(paa_list)
+head(seg_paa5)
+segment_length=10
+gunpointoldVersusyoung_train_data_long=gunpointoldVersusyoung_train_data_long[order(id,time)]
+paa_result=vector('list',train_nrow)
+for (i in 1:train_nrow){
+      data_ts=gunpointoldVersusyoung_train_data_long[id==i]$value
+      paa_repr=repr_paa(data_ts,segment_length,meanC)
+      paa_result[[i]]=paa_repr 
+}
+paa_list=vector('list', train_nrow)
+for (i in 1:train_nrow) {
+      paa_list[[i]]=as.data.table(t(paa_result[[i]]))
+}
+seg_paa10=rbindlist(paa_list) 
+head(seg_paa10)
+segment_length=20
+gunpointoldVersusyoung_train_data_long=gunpointoldVersusyoung_train_data_long[order(id,time)]
+paa_result=vector('list',train_nrow)
+for (i in 1:train_nrow){
+      data_ts=gunpointoldVersusyoung_train_data_long[id==i]$value
+      paa_repr=repr_paa(data_ts,segment_length,meanC)
+      paa_result[[i]]=paa_repr 
+}
+paa_list=vector('list', train_nrow)
+for (i in 1:train_nrow) {
+      paa_list[[i]]=as.data.table(t(paa_result[[i]]))
+}
+seg_paa20=rbindlist(paa_list) 
+head(seg_paa20)
+```
+
+
+## Tree Piecewise Representation
+
+
+```{r}
+for (i in 1:length(unique(gunpointoldVersusyoung_train_data_long$id))){
+fit <- rpart(value~time,data = gunpointoldVersusyoung_train_data_long[id == i],control = rpart.control(maxdepth = 2))
+gunpointoldVersusyoung_train_data_long[id == i,tree_piecewise:=predict(fit,gunpointoldVersusyoung_train_data_long[id == i])]
+}
+plot(x = gunpointoldVersusyoung_train_data_long[id == 10 & class == 1]$time,y = gunpointoldVersusyoung_train_data_long[id == 10 & class == 1]$tree_piecewise)
+``` 
+
+
+
+```{r}
+gunpointoldVersusyoung_train_data_raw = data.frame()
+for(i in 1:length(unique(gunpointoldVersusyoung_train_data_long$id))){
+gunpointoldVersusyoung_train_data_raw = rbind(gunpointoldVersusyoung_train_data_raw,t(as.data.frame(gunpointoldVersusyoung_train_data_long[id == i]$value)))
+}
+row.names(gunpointoldVersusyoung_train_data_raw) <- NULL
+head(gunpointoldVersusyoung_train_data_raw)
+```
+
+
+
+```{r}
+gunpointoldVersusyoung_train_data_tree_piecewise = data.frame()
+for(i in 1:length(unique(gunpointoldVersusyoung_train_data_long$id))){
+   gunpointoldVersusyoung_train_data_tree_piecewise = rbind(gunpointoldVersusyoung_train_data_tree_piecewise,t(as.data.frame(gunpointoldVersusyoung_train_data_long[id == i]$tree_piecewise)))
+}
+row.names(gunpointoldVersusyoung_train_data_tree_piecewise) <- NULL
+head(gunpointoldVersusyoung_train_data_tree_piecewise)
+```
+
+
+
+```{r}
+gunpointoldVersusyoung_train_data_paa5 = data.frame()
+for(i in 1:length(unique(gunpointoldVersusyoung_train_data_long$id))){
+   gunpointoldVersusyoung_train_data_paa5 = rbind(gunpointoldVersusyoung_train_data_paa5,t(as.data.frame(seg_paa5)))
+}
+row.names(gunpointoldVersusyoung_train_data_paa5) <- NULL
+head(gunpointoldVersusyoung_train_data_paa5)
+```
+
+
+
+```{r}
+gunpointoldVersusyoung_train_data_paa10 = data.frame()
+for(i in 1:length(unique(gunpointoldVersusyoung_train_data_long$id))){
+    gunpointoldVersusyoung_train_data_paa10 = rbind(gunpointoldVersusyoung_train_data_paa10,t(as.data.frame(seg_paa10)))
+}
+row.names(gunpointoldVersusyoung_train_data_paa10) <- NULL
+head(gunpointoldVersusyoung_train_data_paa10)
+```
+
+
+
+```{r}
+gunpointoldVersusyoung_train_data_paa20 = data.frame()
+for(i in 1:length(unique(gunpointoldVersusyoung_train_data_long$id))){
+   gunpointoldVersusyoung_train_data_paa20 = rbind(gunpointoldVersusyoung_train_data_paa20,t(as.data.frame(seg_paa20)))
+}
+row.names(gunpointoldVersusyoung_train_data_paa20) <- NULL
+head(gunpointoldVersusyoung_train_data_paa20)
+```
+
+
+
+
+
+
+
+
+
+
+

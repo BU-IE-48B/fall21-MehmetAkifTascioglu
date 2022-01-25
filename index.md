@@ -15,3 +15,9 @@ This is my Progress Journal website created for IE 48B course at Bogazici Univer
 ## Homework 3 (13/12/2021)
 
 [Here](Files/Homework3/homework3.html) are Comparison of NN classifiers with alternative representations work.
+
+## Project
+
+[Here](Files/Project/PROJECT.html) is my team project html.
+
+[Here](Files/Project/IE48B_Group_8_Project_Report.docx) is project report. 
